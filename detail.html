@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Turf Owner Profile</title>
+  <!-- Font Awesome CSS -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Custom CSS -->
+  <style>
+    /* Custom CSS */
+    .navbar-brand {
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+
+    .navbar-nav .nav-link {
+      margin-left: 15px;
+      font-size: 1.1rem;
+    }
+
+    .profile-btn img {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+    }
+
+    .location-btn {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      color: #007bff;
+    }
+
+    /* Mobile View */
+    @media (max-width: 768px) {
+      .navbar-nav {
+        display: none;
+      }
+    }
+
+    .day-checkbox {
+      margin-right: 10px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-light bg-light sticky-top">
+    <div class="container">
+      <a class="navbar-brand" href="#">KickSpot</a>
+      <div class="collapse navbar-collapse justify-content-center" id="navbarNav">
+        <ul class="navbar-nav">
+          <li class="nav-item"><a class="nav-link" href="#">Home</a></li>
+          <li class="nav-item"><a class="nav-link" href="#">Services</a></li>
+          <li class="nav-item"><a class="nav-link" href="#">About</a></li>
+          <li class="nav-item"><a class="nav-link" href="#">Contact Us</a></li>
+        </ul>
+      </div>
+      <div class="d-flex align-items-center">
+        <button class="btn profile-btn" type="button" onclick="window.getLocation()">
+          <img id="user-profile-img" src="https://t3.ftcdn.net/jpg/06/19/26/46/360_F_619264680_x2PBdGLF54sFe7kTBtAvZnPyXgvaRw0Y.jpg" alt="User Profile">
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Turf Details Section -->
+  <div class="container my-5">
+    <h2 class="mb-4">Enter Turf Details</h2>
+    <form id="turf-form" enctype="multipart/form-data">
+      <div class="mb-3">
+        <label for="status" class="form-label">Turf Status</label>
+        <select id="status" class="form-select" required>
+          <option value="">Select Status</option>
+          <option value="open">Open</option>
+          <option value="closed">Closed</option>
+        </select>
+      </div>
+  
+      <div class="mb-3">
+        <label for="city" class="form-label">City</label>
+        <input type="text" id="city" class="form-control" placeholder="Enter city" required>
+      </div>
+
+      <!-- Slots Section -->
+      <h3 class="mb-4">Add Slots</h3>
+      <div id="slots-container">
+        <!-- Slots will be added here dynamically -->
+      </div>
+      <div class="mb-3">
+        <button type="button" id="add-slot-button" class="btn btn-secondary">Add Slot</button>
+      </div>
+      <h3 class="mb-4">Upload Turf Images</h3>
+      <div id="images-container">
+        <input type="file" id="image1" class="form-control mb-2" accept="image/*" />
+        <input type="file" id="image2" class="form-control mb-2" accept="image/*" />
+        <input type="file" id="image3" class="form-control mb-2" accept="image/*" />
+        <input type="file" id="image4" class="form-control mb-2" accept="image/*" />
+        <input type="file" id="image5" class="form-control mb-2" accept="image/*" />
+      </div>
+      <button type="submit" id="submit-button" class="btn btn-primary">Submit</button>
+      <button type="button" id="update-button" class="btn btn-success d-none">Update</button>
+    </form>
+  </div>
+  
+  <!-- Bootstrap JS (for responsiveness and toggler) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+    import { getDatabase, ref, set, get, update } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+    import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAwgq5oTikQJ5WeCGkgpcCSyMwXunAWdrE",
+      authDomain: "turf-2d4a2.firebaseapp.com",
+      projectId: "turf-2d4a2",
+      storageBucket: "turf-2d4a2.appspot.com",
+      messagingSenderId: "1093579163182",
+      appId: "1:1093579163182:web:9e7e98562765c0462f41bf",
+      databaseURL: "https://turf-2d4a2-default-rtdb.firebaseio.com/"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const database = getDatabase(app);
+    const storage = getStorage(app);
+
+    let currentUser = null;
+    let isEditing = false;
+    let slotCount = 0;
+
+    function updateProfile(user) {
+      const navbarImg = document.getElementById('user-profile-img');
+      if (user) {
+        const photoURL = user.photoURL || 'https://media.istockphoto.com/id/1495088043/vector/user-profile-icon-avatar-or-person-icon-profile-picture-portrait-symbol-default-portrait.jpg';
+        navbarImg.src = photoURL;
+      } else {
+        const defaultPhotoURL = 'https://media.istockphoto.com/id/1495088043/vector/user-profile-icon-avatar-or-person-icon-profile-picture-portrait-symbol-default-portrait.jpg';
+        navbarImg.src = defaultPhotoURL;
+      }
+    }
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        currentUser = user;
+        updateProfile(user);
+        loadData(); // Load data on auth state change
+      } else {
+        console.log('No user is signed in.');
+        currentUser = null;
+      }
+    });
+
+    function loadAmenities() {
+      const amenitiesList = ['Wi-Fi', 'Parking', 'Restroom']; // Add more amenities as needed
+
+      const amenitiesContainer = document.getElementById('amenities');
+      amenitiesContainer.innerHTML = ''; // Clear existing amenities
+
+      amenitiesList.forEach(amenity => {
+        const div = document.createElement('div');
+        div.className = 'form-check';
+        div.innerHTML = `
+          <input type="checkbox" id="${amenity.toLowerCase()}" value="${amenity.toLowerCase()}" class="form-check-input">
+          <label for="${amenity.toLowerCase()}" class="form-check-label">${amenity}</label>
+        `;
+        amenitiesContainer.appendChild(div);
+      });
+    }
+
+    function loadData() {
+      if (currentUser) {
+        const userId = currentUser.uid;
+        const turfRef = ref(database, 'ListedTurf/' + userId);
+        get(turfRef).then((snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.val();
+            document.getElementById('status').value = data.status || '';
+            document.getElementById('city').value = data.city || '';
+
+            document.querySelectorAll('#amenities .form-check-input').forEach((checkbox) => {
+              checkbox.checked = data.amenities && data.amenities.includes(checkbox.value);
+            });
+
+            if (data.slots) {
+              loadSlots(data.slots);
+            }
+
+            if (data.images) {
+              loadImages(data.images);
+            }
+
+            document.getElementById('submit-button').classList.add('d-none');
+            document.getElementById('update-button').classList.remove('d-none');
+            isEditing = true;
+          }
+        }).catch((error) => console.error('Error loading data:', error));
+      }
+    }
+
+    function loadSlots(slots) {
+      const slotsContainer = document.getElementById('slots-container');
+      slotsContainer.innerHTML = ''; // Clear existing slots
+
+      for (const slotId in slots) {
+        const slot = slots[slotId];
+        const slotContainer = document.createElement('div');
+        slotContainer.className = 'slot-container mb-4';
+        slotContainer.dataset.slotId = slotId;
+        slotContainer.innerHTML = `
+          <div class="mb-3">
+            <label for="slot-day-${slotId}" class="form-label">Day</label>
+            <select id="slot-day-${slotId}" class="form-select" required>
+              <option value="">Select Day</option>
+              <option value="Monday" ${slot.day === 'Monday' ? 'selected' : ''}>Monday</option>
+              <option value="Tuesday" ${slot.day === 'Tuesday' ? 'selected' : ''}>Tuesday</option>
+              <option value="Wednesday" ${slot.day === 'Wednesday' ? 'selected' : ''}>Wednesday</option>
+              <option value="Thursday" ${slot.day === 'Thursday' ? 'selected' : ''}>Thursday</option>
+              <option value="Friday" ${slot.day === 'Friday' ? 'selected' : ''}>Friday</option>
+              <option value="Saturday" ${slot.day === 'Saturday' ? 'selected' : ''}>Saturday</option>
+              <option value="Sunday" ${slot.day === 'Sunday' ? 'selected' : ''}>Sunday</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="slot-start-time-${slotId}" class="form-label">Start Time</label>
+            <input type="time" id="slot-start-time-${slotId}" class="form-control" value="${slot.startTime || ''}" required>
+          </div>
+          <div class="mb-3">
+            <label for="slot-end-time-${slotId}" class="form-label">End Time</label>
+            <input type="time" id="slot-end-time-${slotId}" class="form-control" value="${slot.endTime || ''}" required>
+          </div>
+          <div class="mb-3">
+            <label for="slot-duration-${slotId}" class="form-label">Duration (minutes)</label>
+            <input type="number" id="slot-duration-${slotId}" class="form-control" value="${slot.duration || ''}" required>
+          </div>
+          <div class="mb-3">
+            <label for="slot-rate-${slotId}" class="form-label">Rate</label>
+            <input type="number" id="slot-rate-${slotId}" class="form-control" value="${slot.rate || ''}" required>
+          </div>
+          <button type="button" class="btn btn-danger remove-slot-button">Remove Slot</button>
+        `;
+        slotsContainer.appendChild(slotContainer);
+        slotCount++;
+      }
+    }
+
+    function loadImages(images) {
+      const imageInputs = document.querySelectorAll('#images-container input[type="file"]');
+      imageInputs.forEach((input, index) => {
+        if (images[index]) {
+          input.dataset.url = images[index];
+          // Add preview functionality here if needed
+        }
+      });
+    }
+
+    document.getElementById('add-slot-button').addEventListener('click', () => {
+      addSlot();
+    });
+
+    document.getElementById('turf-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      if (currentUser) {
+        const userId = currentUser.uid;
+        const status = document.getElementById('status').value;
+        const city = document.getElementById('city').value;
+        const amenities = Array.from(document.querySelectorAll('#amenities .form-check-input:checked')).map(checkbox => checkbox.value);
+
+        const slots = {};
+        document.querySelectorAll('#slots-container .slot-container').forEach((slotContainer) => {
+          const slotId = slotContainer.dataset.slotId;
+          slots[slotId] = {
+            day: document.getElementById(`slot-day-${slotId}`).value,
+            startTime: document.getElementById(`slot-start-time-${slotId}`).value,
+            endTime: document.getElementById(`slot-end-time-${slotId}`).value,
+            duration: parseInt(document.getElementById(`slot-duration-${slotId}`).value, 10),
+            rate: parseFloat(document.getElementById(`slot-rate-${slotId}`).value)
+          };
+        });
+
+        const images = [];
+        const imageInputs = document.querySelectorAll('#images-container input[type="file"]');
+        for (const imageInput of imageInputs) {
+          if (imageInput.files.length > 0) {
+            const file = imageInput.files[0];
+            const imageRef = storageRef(storage, `turf-images/${userId}/${file.name}`);
+            try {
+              await uploadBytes(imageRef, file);
+              const url = await getDownloadURL(imageRef);
+              images.push(url);
+            } catch (error) {
+              console.error('Error uploading image:', error);
+            }
+          } else {
+            if (imageInput.dataset.url) {
+              images.push(imageInput.dataset.url);
+            }
+          }
+        }
+
+        const updates = {
+          status,
+          city,
+          amenities,
+          slots,
+          images
+        };
+
+        const turfRef = ref(database, 'ListedTurf/' + userId);
+        if (isEditing) {
+          update(turfRef, updates)
+            .then(() => alert('Turf details updated successfully'))
+            .catch((error) => console.error('Error updating details:', error));
+        } else {
+          set(turfRef, updates)
+            .then(() => alert('Turf details saved successfully'))
+            .catch((error) => console.error('Error saving details:', error));
+        }
+      }
+    });
+
+    document.getElementById('slots-container').addEventListener('click', (event) => {
+      if (event.target.classList.contains('remove-slot-button')) {
+        const slotContainer = event.target.closest('.slot-container');
+        slotContainer.remove();
+      }
+    });
+
+    function addSlot() {
+      const slotsContainer = document.getElementById('slots-container');
+      const slotId = `slot-${slotCount}`;
+      const slotContainer = document.createElement('div');
+      slotContainer.className = 'slot-container mb-4';
+      slotContainer.dataset.slotId = slotId;
+      slotContainer.innerHTML = `
+        <div class="mb-3">
+          <label for="slot-day-${slotId}" class="form-label">Day</label>
+          <select id="slot-day-${slotId}" class="form-select" required>
+            <option value="">Select Day</option>
+            <option value="Monday">Monday</option>
+            <option value="Tuesday">Tuesday</option>
+            <option value="Wednesday">Wednesday</option>
+            <option value="Thursday">Thursday</option>
+            <option value="Friday">Friday</option>
+            <option value="Saturday">Saturday</option>
+            <option value="Sunday">Sunday</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="slot-start-time-${slotId}" class="form-label">Start Time</label>
+          <input type="time" id="slot-start-time-${slotId}" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label for="slot-end-time-${slotId}" class="form-label">End Time</label>
+          <input type="time" id="slot-end-time-${slotId}" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label for="slot-duration-${slotId}" class="form-label">Duration (minutes)</label>
+          <input type="number" id="slot-duration-${slotId}" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label for="slot-rate-${slotId}" class="form-label">Rate</label>
+          <input type="number" id="slot-rate-${slotId}" class="form-control" required>
+        </div>
+        <button type="button" class="btn btn-danger remove-slot-button">Remove Slot</button>
+      `;
+      slotsContainer.appendChild(slotContainer);
+      slotCount++;
+    }
+
+    function getLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((position) => {
+          const latitude = position.coords.latitude;
+          const longitude = position.coords.longitude;
+          console.log('Latitude: ' + latitude);
+          console.log('Longitude: ' + longitude);
+          alert('Location fetched! Check the console for details.');
+        }, (error) => {
+          console.error('Error fetching location:', error);
+        });
+      } else {
+        alert('Geolocation is not supported by this browser.');
+      }
+    }
+  </script>
+</body>
+</html>
