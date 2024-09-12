@@ -8,9 +8,10 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
   <!-- Bootstrap CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Leaflet CSS (for the map) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <!-- Custom CSS -->
   <style>
-    /* Custom CSS */
     .navbar-brand {
       font-size: 1.5rem;
       font-weight: bold;
@@ -34,7 +35,6 @@
       color: #007bff;
     }
 
-    /* Mobile View */
     @media (max-width: 768px) {
       .navbar-nav {
         display: none;
@@ -43,6 +43,32 @@
 
     .day-checkbox {
       margin-right: 10px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .image-preview {
+      max-width: 200px;
+      margin-bottom: 10px;
+    }
+
+    .slot-container {
+      position: relative;
+      padding-bottom: 30px;
+    }
+
+    .remove-slot-button {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+    }
+
+    #map {
+      height: 400px;
+      width: 100%;
+      margin-bottom: 30px;
     }
   </style>
 </head>
@@ -60,7 +86,7 @@
         </ul>
       </div>
       <div class="d-flex align-items-center">
-        <button class="btn profile-btn" type="button" onclick="window.getLocation()">
+        <button class="btn profile-btn" type="button" onclick="getLocation()">
           <img id="user-profile-img" src="https://t3.ftcdn.net/jpg/06/19/26/46/360_F_619264680_x2PBdGLF54sFe7kTBtAvZnPyXgvaRw0Y.jpg" alt="User Profile">
         </button>
       </div>
@@ -79,7 +105,7 @@
           <option value="closed">Closed</option>
         </select>
       </div>
-  
+
       <div class="mb-3">
         <label for="city" class="form-label">City</label>
         <input type="text" id="city" class="form-control" placeholder="Enter city" required>
@@ -93,6 +119,20 @@
       <div class="mb-3">
         <button type="button" id="add-slot-button" class="btn btn-secondary">Add Slot</button>
       </div>
+      <div class="mb-3">
+        <label for="amenities" class="form-label">Amenities</label>
+        <select id="amenities" class="form-select" multiple required>
+          <option value="wifi">Wi-Fi</option>
+          <option value="parking">Parking</option>
+          <option value="restrooms">Restrooms</option>
+          <option value="refreshments">Refreshments</option>
+          <option value="locker-rooms">Locker Rooms</option>
+          <option value="lighting">Lighting</option>
+          <!-- Add more amenities options as needed -->
+        </select>
+      </div>
+      
+
       <h3 class="mb-4">Upload Turf Images</h3>
       <div id="images-container">
         <input type="file" id="image1" class="form-control mb-2" accept="image/*" />
@@ -104,14 +144,21 @@
       <button type="submit" id="submit-button" class="btn btn-primary">Submit</button>
       <button type="button" id="update-button" class="btn btn-success d-none">Update</button>
     </form>
+
+    <!-- Map Section -->
+    <h3 class="mb-4">Turf Location</h3>
+    <div id="map"></div>
   </div>
-  
+
   <!-- Bootstrap JS (for responsiveness and toggler) -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Leaflet JS (for the map) -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
     import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-    import { getDatabase, ref, set, get, update } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+    import { getDatabase, ref, set, get, remove } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
     import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
 
     const firebaseConfig = {
@@ -136,13 +183,8 @@
 
     function updateProfile(user) {
       const navbarImg = document.getElementById('user-profile-img');
-      if (user) {
-        const photoURL = user.photoURL || 'https://media.istockphoto.com/id/1495088043/vector/user-profile-icon-avatar-or-person-icon-profile-picture-portrait-symbol-default-portrait.jpg';
-        navbarImg.src = photoURL;
-      } else {
-        const defaultPhotoURL = 'https://media.istockphoto.com/id/1495088043/vector/user-profile-icon-avatar-or-person-icon-profile-picture-portrait-symbol-default-portrait.jpg';
-        navbarImg.src = defaultPhotoURL;
-      }
+      const photoURL = user?.photoURL || 'https://media.istockphoto.com/id/1495088043/vector/user-profile-icon-avatar-or-person-icon-profile-picture-portrait-symbol-default-portrait.jpg';
+      navbarImg.src = photoURL;
     }
 
     onAuthStateChanged(auth, (user) => {
@@ -156,58 +198,48 @@
       }
     });
 
-    function loadAmenities() {
-      const amenitiesList = ['Wi-Fi', 'Parking', 'Restroom']; // Add more amenities as needed
-
-      const amenitiesContainer = document.getElementById('amenities');
-      amenitiesContainer.innerHTML = ''; // Clear existing amenities
-
-      amenitiesList.forEach(amenity => {
-        const div = document.createElement('div');
-        div.className = 'form-check';
-        div.innerHTML = `
-          <input type="checkbox" id="${amenity.toLowerCase()}" value="${amenity.toLowerCase()}" class="form-check-input">
-          <label for="${amenity.toLowerCase()}" class="form-check-label">${amenity}</label>
-        `;
-        amenitiesContainer.appendChild(div);
-      });
-    }
-
     function loadData() {
-      if (currentUser) {
-        const userId = currentUser.uid;
-        const turfRef = ref(database, 'ListedTurf/' + userId);
-        get(turfRef).then((snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.val();
-            document.getElementById('status').value = data.status || '';
-            document.getElementById('city').value = data.city || '';
+  if (currentUser) {
+    const userId = currentUser.uid;
+    const turfRef = ref(database, `ListedTurf/${userId}`);
+    get(turfRef).then((snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        document.getElementById('status').value = data.status || '';
+        document.getElementById('city').value = data.city || '';
 
-            document.querySelectorAll('#amenities .form-check-input').forEach((checkbox) => {
-              checkbox.checked = data.amenities && data.amenities.includes(checkbox.value);
-            });
+        if (data.slots) {
+          loadSlots(data.slots);
+        }
 
-            if (data.slots) {
-              loadSlots(data.slots);
-            }
+        if (data.images) {
+          loadImages(data.images);
+        }
 
-            if (data.images) {
-              loadImages(data.images);
-            }
+        // Set amenities
+        const amenitiesSelect = document.getElementById('amenities');
+        Array.from(amenitiesSelect.options).forEach(option => {
+          option.selected = data.amenities && data.amenities.includes(option.value);
+        });
 
-            document.getElementById('submit-button').classList.add('d-none');
-            document.getElementById('update-button').classList.remove('d-none');
-            isEditing = true;
-          }
-        }).catch((error) => console.error('Error loading data:', error));
+        // Load map with turf location
+        const latitude = data.latitude || 40.7128; // Default to New York City if not provided
+        const longitude = data.longitude || -74.0060; // Default to New York City if not provided
+        loadMap(latitude, longitude);
+
+        document.getElementById('submit-button').classList.add('d-none');
+        document.getElementById('update-button').classList.remove('d-none');
+        isEditing = true;
       }
-    }
+    }).catch((error) => console.error('Error loading data:', error));
+  }
+}
 
     function loadSlots(slots) {
       const slotsContainer = document.getElementById('slots-container');
       slotsContainer.innerHTML = ''; // Clear existing slots
 
-      for (const slotId in slots) {
+      Object.keys(slots).forEach(slotId => {
         const slot = slots[slotId];
         const slotContainer = document.createElement('div');
         slotContainer.className = 'slot-container mb-4';
@@ -235,106 +267,40 @@
             <input type="time" id="slot-end-time-${slotId}" class="form-control" value="${slot.endTime || ''}" required>
           </div>
           <div class="mb-3">
-            <label for="slot-duration-${slotId}" class="form-label">Duration (minutes)</label>
-            <input type="number" id="slot-duration-${slotId}" class="form-control" value="${slot.duration || ''}" required>
-          </div>
-          <div class="mb-3">
             <label for="slot-rate-${slotId}" class="form-label">Rate</label>
-            <input type="number" id="slot-rate-${slotId}" class="form-control" value="${slot.rate || ''}" required>
+            <input type="number" step="0.01" id="slot-rate-${slotId}" class="form-control" value="${slot.rate || ''}" required>
           </div>
-          <button type="button" class="btn btn-danger remove-slot-button">Remove Slot</button>
+          <button type="button" class="btn btn-danger remove-slot-button" data-slot-id="${slotId}">Remove Slot</button>
         `;
         slotsContainer.appendChild(slotContainer);
-        slotCount++;
-      }
+      });
+
+      document.querySelectorAll('.remove-slot-button').forEach(button => {
+        button.addEventListener('click', () => {
+          removeSlot(button.dataset.slotId);
+        });
+      });
     }
 
     function loadImages(images) {
       const imageInputs = document.querySelectorAll('#images-container input[type="file"]');
+      const previews = document.querySelectorAll('#images-container .image-preview');
       imageInputs.forEach((input, index) => {
         if (images[index]) {
+          const preview = previews[index] || document.createElement('img');
+          preview.src = images[index];
+          preview.className = 'image-preview';
+          input.parentNode.insertBefore(preview, input);
           input.dataset.url = images[index];
-          // Add preview functionality here if needed
         }
       });
     }
 
-    document.getElementById('add-slot-button').addEventListener('click', () => {
-      addSlot();
-    });
-
-    document.getElementById('turf-form').addEventListener('submit', async (event) => {
-      event.preventDefault();
-
-      if (currentUser) {
-        const userId = currentUser.uid;
-        const status = document.getElementById('status').value;
-        const city = document.getElementById('city').value;
-        const amenities = Array.from(document.querySelectorAll('#amenities .form-check-input:checked')).map(checkbox => checkbox.value);
-
-        const slots = {};
-        document.querySelectorAll('#slots-container .slot-container').forEach((slotContainer) => {
-          const slotId = slotContainer.dataset.slotId;
-          slots[slotId] = {
-            day: document.getElementById(`slot-day-${slotId}`).value,
-            startTime: document.getElementById(`slot-start-time-${slotId}`).value,
-            endTime: document.getElementById(`slot-end-time-${slotId}`).value,
-            duration: parseInt(document.getElementById(`slot-duration-${slotId}`).value, 10),
-            rate: parseFloat(document.getElementById(`slot-rate-${slotId}`).value)
-          };
-        });
-
-        const images = [];
-        const imageInputs = document.querySelectorAll('#images-container input[type="file"]');
-        for (const imageInput of imageInputs) {
-          if (imageInput.files.length > 0) {
-            const file = imageInput.files[0];
-            const imageRef = storageRef(storage, `turf-images/${userId}/${file.name}`);
-            try {
-              await uploadBytes(imageRef, file);
-              const url = await getDownloadURL(imageRef);
-              images.push(url);
-            } catch (error) {
-              console.error('Error uploading image:', error);
-            }
-          } else {
-            if (imageInput.dataset.url) {
-              images.push(imageInput.dataset.url);
-            }
-          }
-        }
-
-        const updates = {
-          status,
-          city,
-          amenities,
-          slots,
-          images
-        };
-
-        const turfRef = ref(database, 'ListedTurf/' + userId);
-        if (isEditing) {
-          update(turfRef, updates)
-            .then(() => alert('Turf details updated successfully'))
-            .catch((error) => console.error('Error updating details:', error));
-        } else {
-          set(turfRef, updates)
-            .then(() => alert('Turf details saved successfully'))
-            .catch((error) => console.error('Error saving details:', error));
-        }
-      }
-    });
-
-    document.getElementById('slots-container').addEventListener('click', (event) => {
-      if (event.target.classList.contains('remove-slot-button')) {
-        const slotContainer = event.target.closest('.slot-container');
-        slotContainer.remove();
-      }
-    });
-
     function addSlot() {
+      slotCount++;
       const slotsContainer = document.getElementById('slots-container');
-      const slotId = `slot-${slotCount}`;
+      const slotId = 'slot-' + slotCount;
+
       const slotContainer = document.createElement('div');
       slotContainer.className = 'slot-container mb-4';
       slotContainer.dataset.slotId = slotId;
@@ -361,34 +327,124 @@
           <input type="time" id="slot-end-time-${slotId}" class="form-control" required>
         </div>
         <div class="mb-3">
-          <label for="slot-duration-${slotId}" class="form-label">Duration (minutes)</label>
-          <input type="number" id="slot-duration-${slotId}" class="form-control" required>
-        </div>
-        <div class="mb-3">
           <label for="slot-rate-${slotId}" class="form-label">Rate</label>
-          <input type="number" id="slot-rate-${slotId}" class="form-control" required>
+          <input type="number" step="0.01" id="slot-rate-${slotId}" class="form-control" required>
         </div>
-        <button type="button" class="btn btn-danger remove-slot-button">Remove Slot</button>
+        <button type="button" class="btn btn-danger remove-slot-button" data-slot-id="${slotId}">Remove Slot</button>
+        
       `;
       slotsContainer.appendChild(slotContainer);
-      slotCount++;
+
+      document.querySelector(`.remove-slot-button[data-slot-id="${slotId}"]`).addEventListener('click', () => {
+        removeSlot(slotId);
+      });
     }
 
-    function getLocation() {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition((position) => {
-          const latitude = position.coords.latitude;
-          const longitude = position.coords.longitude;
-          console.log('Latitude: ' + latitude);
-          console.log('Longitude: ' + longitude);
-          alert('Location fetched! Check the console for details.');
-        }, (error) => {
-          console.error('Error fetching location:', error);
-        });
-      } else {
-        alert('Geolocation is not supported by this browser.');
+    async function uploadImages() {
+      const imageUrls = [];
+      const imageInputs = document.querySelectorAll('#images-container input[type="file"]');
+      for (const imageInput of imageInputs) {
+        if (imageInput.files.length > 0) {
+          const file = imageInput.files[0];
+          const storageReference = storageRef(storage, `images/${currentUser.uid}/${file.name}`);
+          await uploadBytes(storageReference, file);
+          const url = await getDownloadURL(storageReference);
+          imageUrls.push(url);
+        }
+      }
+
+      // Hide image upload fields after upload
+      document.getElementById('images-container').classList.add('hidden');
+      
+      return imageUrls;
+    }
+
+    async function saveTurfDetails(images) {
+  if (currentUser) {
+    const userId = currentUser.uid;
+    const status = document.getElementById('status').value;
+    const city = document.getElementById('city').value;
+    const latitude = 40.7128; // Default latitude
+    const longitude = -74.0060; // Default longitude
+
+    const slots = {};
+    document.querySelectorAll('#slots-container .slot-container').forEach((slotContainer) => {
+      const slotId = slotContainer.dataset.slotId;
+      slots[slotId] = {
+        day: document.getElementById(`slot-day-${slotId}`).value,
+        startTime: formatTime(document.getElementById(`slot-start-time-${slotId}`).value),
+        endTime: formatTime(document.getElementById(`slot-end-time-${slotId}`).value),
+        rate: parseFloat(document.getElementById(`slot-rate-${slotId}`).value),
+        isBooked: false,
+        bookedBy: null,
+        bookingTime: null
+      };
+    });
+
+    // Get selected amenities
+    const amenities = Array.from(document.getElementById('amenities').selectedOptions).map(option => option.value);
+
+    const turfRef = ref(database, `ListedTurf/${userId}`);
+    await set(turfRef, {
+      status: status,
+      city: city,
+      latitude: latitude,
+      longitude: longitude,
+      slots: slots,
+      images: images,
+      amenities: amenities // Add amenities here
+    });
+
+    alert('Turf details saved successfully!');
+  }
+}
+
+    function formatTime(time) {
+      if (!time) return '';
+      const [hours, minutes] = time.split(':').map(Number);
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const adjustedHours = hours % 12 || 12;
+      return `${adjustedHours}:${minutes < 10 ? '0' : ''}${minutes} ${period}`;
+    }
+
+    function removeSlot(slotId) {
+      const slotContainer = document.querySelector(`.slot-container[data-slot-id="${slotId}"]`);
+      if (slotContainer) {
+        slotContainer.remove();
+        if (currentUser) {
+          const slotRef = ref(database, `ListedTurf/${currentUser.uid}/slots/${slotId}`);
+          remove(slotRef).catch(error => console.error('Error removing slot:', error));
+        }
       }
     }
+
+    function loadMap(lat, lon) {
+      const map = L.map('map').setView([lat, lon], 13);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+
+      L.marker([lat, lon]).addTo(map)
+        .bindPopup('Turf Location')
+        .openPopup();
+    }
+
+    document.getElementById('turf-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const images = await uploadImages();
+      await saveTurfDetails(images);
+    });
+
+    document.getElementById('add-slot-button').addEventListener('click', addSlot);
+
+    document.getElementById('update-button').addEventListener('click', async () => {
+      const images = await uploadImages();
+      await saveTurfDetails(images);
+    });
+
+    // Initialize map with default location
+    loadMap(50.78528, -74.0060); // Default location for map
   </script>
 </body>
 </html>
